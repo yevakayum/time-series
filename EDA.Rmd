@@ -1,0 +1,263 @@
+---
+title: "EDA"
+author: "Yeva Kayumbayeva a1878763"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tsibble,
+        dplyr,
+        feasts,
+        fable,
+        ggplot2,
+        ggtime,
+        tidyr,
+        slider)
+```
+
+### Data description
+
+```{r, include=FALSE}
+data <- read.csv("BirthsAndFertilityRatesAnnual.csv", check.names = FALSE)
+
+tfr <- data |> 
+  mutate(across(-DataSeries, as.character)) |> 
+  filter(DataSeries == "Total Fertility Rate (TFR)") |> 
+  pivot_longer(
+    cols = -DataSeries,
+    names_to = "Year",
+    values_to = "TFR"
+  ) |> 
+  mutate(
+    Year = as.integer(Year),
+    TFR = as.numeric(TFR)
+  ) |> 
+  filter(Year <= 2024) |> 
+  arrange(Year) |> 
+  select(Year, TFR) 
+
+tlb <- data |> 
+  mutate(across(-DataSeries, as.character)) |> 
+  filter(DataSeries == "Total Live-Births") |> 
+  pivot_longer(
+    cols = -DataSeries,
+    names_to = "Year",
+    values_to = "TLB"
+  ) |> 
+  mutate(
+    Year = as.integer(Year),
+    TLB = as.numeric(TLB)
+  ) |> 
+  filter(Year <= 2024) |> 
+  arrange(Year) |> 
+  select(Year, TLB)
+
+tfr_tlb <- tfr |> 
+  left_join(tlb, by = "Year")
+
+skimr::skim_without_charts(tfr_tlb)
+
+tfr_ts <- ts(tfr_tlb$TFR, start = 1960, frequency = 1)
+tlb_ts <- ts(tfr_tlb$TLB, start = 1960, frequency = 1)
+
+```
+
+We use Singapore birth and fertility data from 1960 to 2025, where each row represents a different data series and each column corresponds to year. For this report, we will focus only on Total Live-Births (TLB) and Total Fertility Rate (TFR) from 1960 to 2024.
+
+At first, we clean data to only have required variables TLB and TFR and rearrange data in increasing order as in raw data, we have data from 2025 to 1960. Therefore, we left with dataset that contains three columns: Year, TRF and TLB from 1960 to 2024. There is no missing values for this cleaned dataset.
+
+Secondly, we convert cleaned data series into annual time series with frequency 1 as given data is annual, so we can not analyse seasonality during a year. Therefore, as the data are annual, the main features to inspect are trend, serial dependence and any changes in behaviour. And focus on non-seasonal AR or ARIMA models rather than seasonal models.
+
+```{r fig1, echo=FALSE, fig.cap="Singapore Annual Total Fertility Rate from 1960 to 2024"}
+plot(tfr_ts,
+     main = "Singapore Total Fertility Rate, 1960 - 2024", 
+     xlab = "Year",
+     ylab = "TFR")
+```
+
+```{r fig2, echo=FALSE, fig.cap="Singapore Annual Total Live-Births from 1960 to 2024"}
+plot(tlb_ts,
+     main = "Singapore Total Live-Births, 1960 - 2024",
+     xlab = "Year",
+     ylab = "TLB")
+```
+
+From the plots (Figure 1 and Figure 2), both series distinctly change over that time period and do not stay at one stable level. TFR (Figure 1) significant smooth decrease over the period with dramatic fall from 1960 to 1980 and then continues to smoothly decline to a lower level. Figure 2 shows that TLB as well decreases overall but while TRF shows quite stable decline, TLB fluctuates over time with clear rises and drops but falls in most recent years. Therefore, both series look non-stationary in level based on the plots. This means that we should focus on differencing, the sample ACF and PACF and non-seasonal AR or ARIMA models.
+
+### Analysis of time series features
+
+After plotting TFR and TLB series, we inspect whether differencing reduces trend and produces data that are more suitable for stationary modelling. And then we analyse using sample autocorrelation function (ACF) and partial autocorrelation function (PACF).
+
+```{r fig3, echo=FALSE, fig.cap="Difference of Singapore Annual Total Fertility Rate from 1960 to 2024"}
+plot(diff(tfr_ts),
+     main = "Diffenrence of TFR", 
+     #sub = "Figure 3: Difference of Singapore Annual Total Fertility Rate from 1960 to 2024",
+     xlab = "Year",
+     ylab = "TFR")
+```
+
+```{r fig4, echo=FALSE, fig.cap="Difference of Singapore Annual Total Live-Births from 1960 to 2024"}
+plot(diff(tlb_ts),
+     main = "Difference of TLB", 
+     #sub = "Figure 4: Difference of Singapore Annual Total Live-Births from 1960 to 2024",
+     xlab = "Year",
+     ylab = "TLB")
+```
+
+The first differencing plots (Figure 3 and Figure 4) show that differencing removes some trend from both TFR and TLB series. Both series now fluctuates around zero. But TFR (Figure 3) still looks uneven across whole period with noticeable negative trend at the beginnig and drastic rise around 1990. TBL (Figure 4) appears more irregular than TRF and has larger spikes. Therefore, differencing reduces most of the trend but series are still not a white noise, so we need to inspect ACF and PACF.
+
+```{r fig5, echo=FALSE, fig.cap="ACF and PACF of TRF and difference of TRF"}
+par(mfrow = c(2,2))
+acf(tfr_ts, lag.max = 20, main = "ACF of TFR")
+pacf(tfr_ts, lag.max = 20, main = "PACF of TFR")
+acf(diff(tfr_ts), lag.max = 20, main = "ACF of diff(TFR)")
+pacf(diff(tfr_ts), lag.max = 20, main = "PACF of diff(TFR)")
+par(mfrow = c(1,1))
+```
+
+```{r fig6, echo=FALSE, fig.cap="ACF and PACF of TLB and difference of TLB"}
+par(mfrow = c(2,2))
+acf(tlb_ts, lag.max = 20, main = "ACF of TLB")
+pacf(tlb_ts, lag.max = 20, main = "PACF of TLB")
+acf(diff(tlb_ts), lag.max = 20, main = "ACF of diff(TLB)")
+pacf(diff(tlb_ts), lag.max = 20, main = "PACF of diff(TLB)")
+par(mfrow = c(1,1))
+```
+
+Overall, for Figure 5 and Figure 6, ACF plots for TFR and TLB appear non-stationary, so they are not suitable for modelling. After differencing ACF and PACF plots for both series look better, hence that means that differencing improves series. Therefore, non-seasonal ARIMA models are the most suitable for these series.
+
+As the original series has some trend and the differenced series look more stable, we should use ARIMA(p, 1, q) models and then compare them by AIC and the residuals to choose the best model. For TFR is better to choose slightly bigger ARIMA as differenced series still shows some structure, such as ARIMA(1,1,1), ARIMA(2,1,0) and ARIMA(0,1,2). For TLB, ARIMA models can be low such as ARIMA(1,1,0), ARIMA(0,1,1) and ARIMA(1,1,1).
+
+```{r, echo = FALSE, warning=FALSE}
+tfr_train <- window(tfr_ts, end = 2012)
+tlb_train <- window(tlb_ts, end = 2012)
+
+tfr_111 <-  arima(tfr_train, order = c(1,1,1))
+tfr_210 <- arima(tfr_train, order = c(2,1,0))
+tfr_012 <- arima(tfr_train, order = c(0,1,2))
+
+tlb_110 <- arima(tlb_train, order = c(1,1,0))
+tlb_011 <-  arima(tlb_train, order = c(0,1,1))
+tlb_111 <- arima(tlb_train, order = c(1,1,1))
+
+aic_table <- data.frame(
+  Model = c("TFR ARIMA(1,1,1)", "TFR ARIMA(2,1,0)", "TFR ARIMA(0,1,2)",
+            "TLB ARIMA(1,1,0)", "TLB ARIMA(0,1,1)", "TLB ARIMA(1,1,1)"),
+  AIC = c(tfr_111$aic, tfr_210$aic, tfr_012$aic,
+          tlb_110$aic, tlb_011$aic, tlb_111$aic)
+)
+knitr::kable(aic_table, 
+             caption = "AIC values for ARIMA models for TFR and TLB")
+
+```
+
+From Table 1, best models for TFR are ARIMA(1,1,1) and ARIMA(2,1,0) and for TLB are ARIMA(1,1,0) and ARIMA(0,1,1). So, we need to look at residual ACF and PACF for these models.
+
+```{r fig7, echo=FALSE, fig.cap="ACF and PACF of different ARIMA models for TFR"}
+par(mfrow = c(2,2))
+
+acf(tfr_111$resid, lag.max = 20, main = "TFR ARIMA(1,1,1) ACF")
+pacf(tfr_111$resid, lag.max = 20, main = "TFR ARIMA(1,1,1) PACF")
+
+acf(tfr_210$resid, lag.max = 20, main = "TFR ARIMA(2,1,0) ACF")
+pacf(tfr_210$resid, lag.max = 20, main = "TFR ARIMA(2,1,0) PACF")
+
+par(mfrow = c(1,1))
+```
+
+```{r fig8, echo=FALSE, fig.cap="ACF and PACF of different ARIMA models for TLB"}
+par(mfrow = c(2,2))
+
+acf(tlb_011$resid, lag.max = 20, main = "TLB ARIMA(0,1,1) ACF")
+pacf(tlb_011$resid, lag.max = 20, main = "TLB ARIMA(0,1,1) PACF")
+
+acf(tlb_110$resid, lag.max = 20, main = "TLB ARIMA(1,1,0) ACF")
+pacf(tlb_110$resid, lag.max = 20, main = "TLB ARIMA(1,1,0) PACF")
+
+par(mfrow = c(1,1))
+```
+
+From Figure 7 and Figure 8, residuals of selected ARIMA models for both TFR and TLB lie within 95% bounds, so chosen models are correct. For TFR preferred ARIMA(1,1,1) and for TLB is ARIMA(0,1,1) because these models have lowest AIC.
+
+Viable models can be compared first using AIC and residual diagnostics. The best model will have a relatively small AIC and residual ACF/PACF plots that do not show strong autocorrelation. Since, we need to forecast 2013 - 2024, so the main focus will be on forecast accuracy. For doing that we would chose viable model that gives the smallest forecast errors such as RMSE and MSE.
+
+### Research Questions
+
+One of the questions: "How can features founded in the EDA of Singapore's Total Fertility Rate (TFR) and Total Live-Births (TLB) help to select the most suitable forecasting model?" From the EDA, we need to chose the best viable forecasting model and that question is for doing that. This can be done by fitting viable models on 1960 - 2012 and then checking forecasting accuracy with the real data.
+
+### Statistical Appendix
+
+Weak stationarity:
+
+A time series $\{X_t\}$ is said to satisfy weak stationarity if:
+
+-   $\mu_X(t)$ is independent of $t$
+
+-   $\gamma_X(t + h, t)$ is independent of $t$ for each $\text{lag} ~ h$
+
+For weak stationarity time series we can write:
+
+-   constant mean $\mu_X(t)=\mu$
+
+-   lag $h$ autocovariance function $\gamma_X(t+h, t)=\gamma_X(h)$
+
+Autocorrelation function
+
+Let $\{X_t\}$ be a stationary time series. The autocorrelation function (ACF) of $\{X_t\}$ at lag $h$ is
+
+$$
+\rho_X(h)=\frac{\gamma_X(h)}{\gamma_X(0)}=\text{Cor}(X_{t+h}, X_t)
+$$
+
+Sample autocorrelation function
+
+Let $x_1, ..., x_n$ be observations of a time series. The sample mean of $x_1, ..., x_n$ is
+
+$$
+\bar{x}=\frac{1}{n}\sum^{n}_{t=1}x_t
+$$
+
+The sample autocorrelation function is
+
+$$
+\hat{\gamma}(h) := n^{-1}\sum^{n-|h|}_{t}(x_{t+|h|}-\bar{x})(x_t-\bar{x}), ~~~-n<h<n
+$$
+
+The sample autocorrelation function is
+
+$$
+\hat{\rho}(h)=\frac{\hat{\gamma}(h)}{\hat{\gamma}(0)}, ~~~-n<h<n
+$$
+
+Partial autocorrelation function
+
+The PACF at lag $h$, $\alpha(h)$, measures the correlation between $X_t$ and $X_{t+h}$ after accounting for correlation in lags $1, ..., h-1$
+
+The PACF is calculated as
+
+$$
+\alpha(h)=\phi_{h,h}=\frac{\rho(h)-\sum^{h-1}_{k=1}\phi_{h-1,k}\rho(h-k)}{1-\sum^{h-1}_{k=1}\phi_{h-1,k}\rho(k)}
+$$
+
+where $\phi_{h,k}=\phi_{h,h}\phi_{h-1,h-k}$ for $1 \leq k\leq h-1$
+
+Differencing
+
+We define the lag-1 difference operator $\nabla$ by
+
+$$
+\nabla X_t=X_t-X_{t-1}=(1-B)X_t
+$$
+
+where $B$ is the backward shift operator,
+
+$$
+BX_t=X_{t-1}
+$$
+
+Non-seasonal ARIMA model
+
+A non-seasonal ARIMA$(p,d,q)$ models, where $d$ is the number of differences.
+
+If $d$ is a nonnegative integer, then $\{X_t\}$ is an ARIMA$(p,d,q)$ process if $Y_t:=(1-B)^dX_t$ is a causal ARMA$(p,q)$ process
